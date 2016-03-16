@@ -26,8 +26,8 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.debounce', 'ui.bootstrap
     };
   }])
 
-  .controller('UibTypeaheadController', ['$scope', '$element', '$attrs', '$compile', '$parse', '$q', '$timeout', '$document', '$window', '$rootScope', '$$debounce', '$uibPosition', 'uibTypeaheadParser',
-    function(originalScope, element, attrs, $compile, $parse, $q, $timeout, $document, $window, $rootScope, $$debounce, $position, typeaheadParser) {
+  .controller('UibTypeaheadController', ['$scope', '$element', '$attrs', '$compile', '$parse', '$q', '$timeout', '$document', '$window', '$rootScope', '$$debounce', '$uibPosition', 'uibTypeaheadParser', 'filterFilter',
+    function(originalScope, element, attrs, $compile, $parse, $q, $timeout, $document, $window, $rootScope, $$debounce, $position, typeaheadParser, filterFilter) {
     var HOT_KEYS = [9, 13, 27, 38, 40];
     var eventDebounceTime = 200;
     var modelCtrl, ngModelOptions;
@@ -42,7 +42,7 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.debounce', 'ui.bootstrap
     originalScope.$watch(attrs.typeaheadMinLength, function (newVal) {
         minLength = !newVal && newVal !== 0 ? 1 : newVal;
     });
-    
+
     //minimal wait time after last character typed before typeahead kicks-in
     var waitTime = originalScope.$eval(attrs.typeaheadWaitMs) || 0;
 
@@ -156,7 +156,7 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.debounce', 'ui.bootstrap
       id: popupId,
       matches: 'matches',
       active: 'activeIdx',
-      select: 'select(activeIdx, evt)',
+      select: 'select(activeIdx, evt, matcher)',
       'move-in-progress': 'moveInProgress',
       query: 'query',
       position: 'position',
@@ -170,6 +170,10 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.debounce', 'ui.bootstrap
 
     if (angular.isDefined(attrs.typeaheadPopupTemplateUrl)) {
       popUpEl.attr('popup-template-url', attrs.typeaheadPopupTemplateUrl);
+    }
+
+    if (angular.isDefined(attrs.typeaheadPopupTemplateMatcher)) {
+      popUpEl.attr('popup-template-matcher', attrs.typeaheadPopupTemplateMatcher);
     }
 
     var resetHint = function() {
@@ -335,13 +339,20 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.debounce', 'ui.bootstrap
       isOpenSetter(originalScope, isOpen);
     };
 
-    scope.select = function(activeIdx, evt) {
+    scope.select = function(activeIdx, evt, matcher) {
       //called from within the $digest() cycle
       var locals = {};
       var model, item;
 
       selected = true;
-      locals[parserResult.itemName] = item = scope.matches[activeIdx].model;
+      if(matcher){
+        var matchObj = {model : {}};
+        matcher.model[matcher] = activeIdx;
+        locals[parserResult.itemName] = item = filterFilter(scope.matches, matchObj)[0].model;
+      }else {
+        locals[parserResult.itemName] = item = scope.matches[activeIdx].model;
+      }
+
       model = parserResult.modelMapper(originalScope, locals);
       $setModelValue(originalScope, model);
       modelCtrl.$setValidity('editable', true);
@@ -566,7 +577,7 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.debounce', 'ui.bootstrap
     };
   })
 
-  .directive('uibTypeaheadPopup', ['$$debounce', function($$debounce) {
+  .directive('uibTypeaheadPopup', ['$$debounce', 'filterFilter', function($$debounce, filterFilter) {
     return {
       scope: {
         matches: '=',
@@ -600,15 +611,28 @@ angular.module('ui.bootstrap.typeahead', ['ui.bootstrap.debounce', 'ui.bootstrap
         };
 
         scope.selectMatch = function(activeIdx, evt) {
+          var useFilter = angular.isDefined(attrs.popupTemplateMatcher);
+
           var debounce = scope.debounce();
           if (angular.isNumber(debounce) || angular.isObject(debounce)) {
             $$debounce(function() {
-              scope.select({activeIdx: activeIdx, evt: evt});
+              if(useFilter) {
+                scope.select({activeIdx: activeIdx, evt: evt, matcher:attrs.popupTemplateMatcher});
+              }else{
+                scope.select({activeIdx: activeIdx, evt: evt});
+              }
             }, angular.isNumber(debounce) ? debounce : debounce['default']);
           } else {
-            scope.select({activeIdx: activeIdx, evt: evt});
+            if(useFilter) {
+              scope.select({activeIdx: activeIdx, evt: evt, matcher:attrs.popupTemplateMatcher});
+            }else{
+              scope.select({activeIdx: activeIdx, evt: evt});
+            }
           }
         };
+
+        // Utility filter
+        scope.$filter = filterFilter;
       }
     };
   }])
